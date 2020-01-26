@@ -139,7 +139,7 @@ end
 function HybridAStar.MotionPrimitives:__tostring()
 	local output = ''
 	for i, primitive in ipairs(self.primitives) do
-		output = output .. string.format('%d: dx: %.4f dy: %.4f dt: %.4f\n', i, primitive.dx, primitive.dy, primitive.dt)
+		output = output .. string.format('%d: dx: %.4f dy: %.4f dt: %.4f d:%.4f\n', i, primitive.dx, primitive.dy, primitive.dt, primitive.d)
 	end
 	return output
 end
@@ -309,7 +309,7 @@ function HybridAStar:init(yieldAfter, maxIterations)
 	self.iterations = 0
 	-- state space resolution
 	self.deltaPos = 1.1
-	self.deltaThetaDeg = 5
+	self.deltaThetaDeg = 3
 	-- if the goal is within self.deltaPos meters we consider it reached
 	self.deltaPosGoal = self.deltaPos
 	-- if the goal heading is within self.deltaThetaDeg degrees we consider it reached
@@ -344,7 +344,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 	self.isValidNodeFunc = isValidNodeFunc or self.isValidNode
 	-- a motion primitive is straight or a few degree turn to the right or left
 	local hybridMotionPrimitives = self:getMotionPrimitives(turnRadius, allowReverse)
-
+	print(tostring(hybridMotionPrimitives))
 	-- create the open list for the nodes as a binary heap where
 	-- the node with the lowest total cost is at the top
 	local openList = BinaryHeap.minUnique(function(a, b) return a:lt(b) end)
@@ -353,7 +353,8 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 	---@type HybridAStar.NodeList closedList
 	self.nodes = HybridAStar.NodeList(self.deltaPos, self.deltaThetaDeg)
 
-	start:updateH(goal)
+	start:updateH(goal, turnRadius)
+	self.distanceToGoal = start.h
 	start:insert(openList)
 	self.nodes:add(start)
 
@@ -365,10 +366,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 		-- pop lowest cost node from queue
 		---@type State3D
 		local pred = State3D.pop(openList)
-
-		if pred.motionPrimitive and pred.motionPrimitive.d == 0 then
-			--self:debug('popped %s', tostring(pred))
-		end
+		--self:debug('%s', tostring(pred))
 
 		if pred:equals(goal, self.deltaPosGoal, math.rad(self.deltaThetaDegGoal)) then
 			-- done!
@@ -384,6 +382,19 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 		end
 
 		if not pred:isClosed() then
+			-- analytical expansion: try a Dubins path from here randomly, more often as we getting closer to the goal
+			if pred.h then
+				if math.random() > 1 - 0.05 * pred.h / self.distanceToGoal then
+					local dubinsPathDescriptor = dubins_shortest_path(pred, goal, turnRadius)
+					local dubinsPath = dubins_path_sample_many(dubinsPathDescriptor, 1)
+					self:debug('Checking for Dubins path at iteration %d, %.1f', self.iterations, pred.h / self.distanceToGoal)
+					if self:isPathValid(dubinsPath) then
+						self:debug('Found collision free Dubins path at iteration %d', self.iterations)
+						self:rollUpPath(pred, goal, dubinsPath)
+						return true, self.path
+					end
+				end
+			end
 			-- create the successor nodes
 			for _, primitive in ipairs(hybridMotionPrimitives:getPrimitives()) do
 				---@type State3D
@@ -401,12 +412,11 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 					if self.iterations < 3 or self.isValidNodeFunc(succ, userData) then
 						succ:updateG(primitive, getNodePenaltyFunc(succ))
 						succ:updateH(goal, turnRadius)
-						if succ.motionPrimitive.d == 0 then
-							--self:debug('updated %s', tostring(succ))
-						end
+						--self:debug('  %s', tostring(succ))
 						if existingSuccNode then
 							-- there is already a node at this (discretized) position
-							if existingSuccNode:getCost() + 0.1 > succ:getCost() then
+							if existingSuccNode:getCost() + 0.01 > succ:getCost() then
+								--self:debug('%.6f replacing %s with %s', succ:getCost() - existingSuccNode:getCost(),  tostring(existingSuccNode), tostring(succ))
 								-- successor cell already exist but the new one is cheaper, replace
 								-- may add 0.1 to the existing one's cost to prefer replacement
 								if self.nodes:inSameCell(succ, pred) then
@@ -451,14 +461,24 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
     return true, nil
 end
 
+function HybridAStar:isPathValid(path)
+	for _, p in ipairs(path) do
+		if not self.isValidNodeFunc({x = p.x, y = p.y}) then
+			return false
+		end
+	end
+	return true
+end
+
 ---@param node State3D
-function HybridAStar:rollUpPath(node, goal)
-	self.path = {}
+function HybridAStar:rollUpPath(node, goal, path)
+	self.path = path or {}
 	local currentNode = node
 	self:debug('Goal node at %.2f/%.2f, cost %.1f (%.1f - %.1f)', goal.x, goal.y, node.cost,
 			self.nodes.lowestCost, self.nodes.highestCost)
 	table.insert(self.path, 1, currentNode)
 	while currentNode.pred and currentNode ~= currentNode.pred do
+		--self:debug('  %s', currentNode.pred)
 		table.insert(self.path, 1, currentNode.pred)
 		currentNode = currentNode.pred
 	end
@@ -527,6 +547,8 @@ function HybridAStarWithAStarInTheMiddle:init(hybridRange, yieldAfter, maxIterat
 	self.hybridRange = hybridRange
 	self.yieldAfter = yieldAfter or 100
 	self.hybridAStarPathFinder = HybridAStar(self.yieldAfter, maxIterations)
+	-- for debug purposes only
+	self.nodes = self.hybridAStarPathFinder.nodes
 	self.aStarPathFinder = self:getAStar()
 end
 
@@ -550,7 +572,7 @@ function HybridAStarWithAStarInTheMiddle:start(start, goal, turnRadius, userData
 	self.isValidNodeFunc = isValidNodeFunc
 	self.hybridRange = self.hybridRange and self.hybridRange or turnRadius * 3
 	-- how far is start/goal apart?
-	self.startNode:updateH(self.goalNode)
+	self.startNode:updateH(self.goalNode, turnRadius)
 	-- do we even need to use the normal A star or the nodes are close enough that the hybrid A star will be fast enough?
 	if self.startNode:getCost() < self.hybridRange * 3 then
 		self.phase = self.ALL_HYBRID
@@ -586,7 +608,6 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 	if done then
 		self.coroutine = nil
 		if not path then return true, nil end
-		self.nodes = self.hybridAStarPathFinder.nodes
 		if self.phase == self.ALL_HYBRID then
 			-- start and goal near, just one phase, all hybrid, we are done
 			-- remove last waypoint as it is the approximate goal point and may not be aligned

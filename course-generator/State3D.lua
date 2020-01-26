@@ -100,7 +100,18 @@ function State3D:isClosed()
     return self.closed
 end
 
+function State3D:distance(other)
+    local dx = other.x - self.x
+    local dy = other.y - self.y
+    local d = math.sqrt(dx * dx + dy * dy)
+    return d
+end
+
 function State3D:equals(other, deltaPos, deltaTheta)
+    local d = self:distance(other)
+    if d < 2*deltaPos then
+--        print(d, self:getCost())
+    end
     return math.abs(self.x - other.x ) < deltaPos and
             math.abs(self.y - other.y ) < deltaPos and
             (math.abs(self.t - other.t) < deltaTheta or
@@ -132,12 +143,19 @@ function State3D:setNodePenalty(nodePenalty)
 end
 
 ---@param node State3D
-function State3D:updateH(goal)
+function State3D:updateH(goal, turnRadius)
     -- simple Eucledian heuristics
-    local dx = goal.x - self.x
-    local dy = goal.y - self.y
-    self.h = math.sqrt(dx * dx + dy * dy)
+    local h = self:distance(goal)
+    local dubinsPath
+    local dubinsPathLength = 0
+    if h > turnRadius / 2 then
+        dubinsPath = dubins_shortest_path(self, goal, turnRadius)
+        dubinsPathLength = dubins_path_length(dubinsPath)
+        self.dubinsPathType = dubinsPath.type
+    end
+    self.h = math.max(h, dubinsPathLength)
     self.cost = self.g + self.h
+    return dubinsPath
 end
 
 
@@ -175,7 +193,8 @@ function State3D:__tostring()
     local result
     local type = self.motionPrimitive and tostring(self.motionPrimitive.type) or 'nil'
     local pred = self.pred and self.pred.motionPrimitive and self.pred.motionPrimitive.type or 'nil'
-    result = string.format('x: %.2f y:%.2f t:%d type:%s g:%.2f h:%.2f c:%.2f closed:%s open:%s, pred = %s', self.x, self.y, math.deg(self.t),
-                type, self.g, self.h, self.cost, tostring(self.closed), tostring(self.onOpenList), pred)
+    result = string.format('x: %.2f y:%.2f t:%d type:%s dubins:%s g:%.2f h:%.2f c:%.2f closed:%s open:%s, pred = %s',
+            self.x, self.y, math.deg(self.t), type, tostring(self.dubinsPathType),
+            self.g, self.h, self.cost, tostring(self.closed), tostring(self.onOpenList), pred)
     return result
 end

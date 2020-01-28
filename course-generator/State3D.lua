@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ]]
 
---- A node in a 3D state space
+--- A node in a 3D state space, also known as a pose, which is a 2D postiion (x, y) and a heading
 ---@class State3D
 State3D = CpObject()
 
@@ -189,6 +189,13 @@ function State3D:normalizeHeadingRad(t)
     end
 end
 
+--- Rotate the 2D part by angle
+function State3D:rotate(angle)
+    self.x, self.y =
+        math.cos(angle) * self.x - math.sin(angle) * self.y,
+        math.sin(angle) * self.x + math.cos(angle) * self.y
+end
+
 function State3D:__tostring()
     local result
     local type = self.motionPrimitive and tostring(self.motionPrimitive.type) or 'nil'
@@ -198,3 +205,4 @@ function State3D:__tostring()
             self.g, self.h, self.cost, tostring(self.closed), tostring(self.onOpenList), pred)
     return result
 end
+

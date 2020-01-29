@@ -25,15 +25,15 @@ ReedsShepp = CpObject()
 
 ReedsShepp.Gear =
 {
-    Forward = {},
-    Backward = {}
+    Forward = 'Forward',
+    Backward = 'Backward'
 }
 
 ReedsShepp.Steer =
 {
-    Left = {},
-    Straight = {},
-    Right = {}
+    Left = 'Left',
+    Straight = 'Straight',
+    Right = 'Right'
 }
 
 -- The PathWords enum lists every possible Reeds-Shepp pattern. L, S, or R described the steering direction (left, straight, or right),
@@ -110,6 +110,11 @@ function ReedsShepp.Action:init(steer, gear, length)
     self.length = length
 end
 
+function ReedsShepp.Action:__tostring()
+    return string.format('%s %s %.1f\n',
+            tostring(self.steer), tostring(self.gear), self.length)
+
+end
 --- The ReedsSheppActionSet class is a set of ReedsSheppActions. As actions are added, their lengths are summed together.
 --- The total cost of the set can be calculated using a reverse gear cost and a gear switch cost.
 ---@class ReedsShepp.ActionSet
@@ -117,10 +122,10 @@ ReedsShepp.ActionSet = CpObject()
 
 function ReedsShepp.ActionSet:init(length)
     self.actions = {}
-    self.length = length
+    self.length = length or 0
 end
 
-function  ReedsShepp.ActionSet:addAction(steer, gear, length)
+function ReedsShepp.ActionSet:addAction(steer, gear, length)
     table.insert(self.actions, ReedsShepp.Action(steer, gear, length))
     self.length = self.length + length
 end
@@ -134,7 +139,6 @@ function ReedsShepp.ActionSet:calculateCost(unit, reverseCostMultiplier, gearSwi
         local actionCost = a.Length * unit
         if a.gear == ReedsShepp.Gear.Backward then
             actionCost = actionCost * reverseCostMultiplier
-
         end
         if a.gear ~= prevGear then
             actionCost = actionCost + gearSwitchCost
@@ -143,4 +147,65 @@ function ReedsShepp.ActionSet:calculateCost(unit, reverseCostMultiplier, gearSwi
         cost = cost + actionCost
     end
     return cost
+end
+
+function ReedsShepp.ActionSet:__tostring()
+    local str = ''
+    for _, action in ipairs(self.actions) do
+        str = str .. tostring(action)
+    end
+    return str
+end
+
+
+---@param start State3D
+function ReedsShepp.ActionSet:getWaypoints(start, turnRadius)
+    local prev = State3D:copy(start)
+    local waypoints = {}
+    table.insert(waypoints, prev)
+    for _, action in ipairs(self.actions) do
+        -- local n = math.ceiling(action.length * unit / maxLength)
+        local n = math.ceil(action.length * turnRadius)
+        if action.steer ~= ReedsShepp.Steer.Straight then
+            local pieceAngle = action.length / n
+
+            local phi = pieceAngle / 2
+            local sinPhi = math.sin(phi)
+            local L = 2 * sinPhi * turnRadius
+            local dx = L * math.cos(phi)
+            local dy = L * sinPhi
+
+            if action.steer == ReedsShepp.Steer.Right then
+                dy = -dy
+                pieceAngle = -pieceAngle
+            end
+            if action.gear == ReedsShepp.Gear.Backward then
+                dx = -dx
+                pieceAngle = -pieceAngle
+            end
+            print('not straight', action, dx, dy, n)
+
+            for _ = 1, n do
+                prev = State3D:copy(prev)
+                prev:add(dx, dy)
+                prev:addHeading(pieceAngle)
+                table.insert(waypoints, prev)
+                --print(prev)
+            end
+        else
+            local pieceLength = action.length * turnRadius / n
+            local dx = pieceLength * math.cos(prev.t)
+            local dy = pieceLength * math.sin(prev.t)
+            if action.gear == ReedsShepp.Gear.Backward then
+                dx = -dx
+                dy = -dy
+            end
+            print('straight', action, dx, dy, turnRadius / n)
+            for _ = 1, n do
+                prev = State3D(dx + prev.x, dy + prev.y, prev.t)
+                table.insert(waypoints, prev)
+            end
+        end
+    end
+    return waypoints
 end

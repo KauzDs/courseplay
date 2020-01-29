@@ -175,6 +175,11 @@ function State3D:getReverseHeading()
     return self:normalizeHeadingRad(self.t + math.pi)
 end
 
+function State3D:addHeading(angle)
+    self.t = self:normalizeHeadingRad(self.t + angle)
+end
+
+
 --- Make a 180 turn
 function State3D:reverseHeading()
     self.t = self:getReverseHeading()
@@ -194,6 +199,12 @@ function State3D:rotate(angle)
     self.x, self.y =
         math.cos(angle) * self.x - math.sin(angle) * self.y,
         math.sin(angle) * self.x + math.cos(angle) * self.y
+end
+
+--- Add a vector dx, dy
+function State3D:add(dx, dy)
+    self.x = self.x + dx * math.cos(self.t) - dy * math.sin(self.t)
+    self.y = self.y + dx * math.sin(self.t) + dy * math.cos(self.t)
 end
 
 function State3D:__tostring()

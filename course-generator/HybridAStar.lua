@@ -46,7 +46,7 @@ end
 ---@see PathfinderInterface#findPath also on how to use.
 function PathfinderInterface:start(...)
 	if not self.coroutine then
-		self.coroutine = coroutine.create(self.run)
+		self.coroutine = coroutine.create(self.findPath)
 	end
 	return self:resume(...)
 end
@@ -74,9 +74,51 @@ function PathfinderInterface:debug(...)
     courseGenerator.debug(...)
 end
 
+--- Interface for analytic solutions of pathfinding problems
+---@class AnalyticSolution
+AnalyticSolution = CpObject()
+
+---@param turnRadius number needed as the solution is usually normalized for the unit circle
+---@return number length of the analytic solution in meters
+function AnalyticSolution:getLength(turnRadius)
+	print('upszi')
+end
+
+---@param start State3D
+---@param turnRadius number
+---@return State3D[] array of path points of the solution
+function AnalyticSolution:getWaypoints(start, turnRadius)
+	print('upszi')
+end
+
+--- Interface for all analytic path problem solvers (Dubins and Reeds-Shepp)
+---@class AnalyticSolver
+AnalyticSolver = CpObject()
+
+--- Solve a pathfinding problem (find drivable path between start and goal
+--- for a vehicle with the given turn radius
+---@param start State3D
+---@param goal State3D
+---@param turnRadius number
+---@return AnalyticSolution a path descriptor
+function AnalyticSolver:solve(start, goal, turnRadius)
+end
 
 ---@class HybridAStar
 HybridAStar = CpObject(PathfinderInterface)
+
+HybridAStar.Gear =
+{
+	Forward = {},
+	Backward = {}
+}
+
+HybridAStar.Steer =
+{
+	Left = {},
+	Straight = {},
+	Right = {}
+}
 
 --- Motion primitives for node expansions, contains the dx/dy/dt values for
 --- driving straight/right/left. The idea is to calculate these once as they are
@@ -99,18 +141,36 @@ function HybridAStar.MotionPrimitives:init(r, expansionDegree, allowReverse)
 	local dx = r * math.sin(dt)
 	local dy = r - r * math.cos(dt)
 	-- forward right
-	table.insert(self.primitives, {dx = dx, dy = -dy, dt = dt, d = d, type = HybridAStar.MotionPrimitiveTypes.FR})
+	table.insert(self.primitives, {dx = dx, dy = -dy, dt = dt, d = d,
+								   gear = HybridAStar.Gear.Forward,
+								   steer = HybridAStar.Steer.Right,
+								   type = HybridAStar.MotionPrimitiveTypes.FR})
 	-- forward left
-	table.insert(self.primitives, {dx = dx, dy = dy, dt = -dt, d = d, type = HybridAStar.MotionPrimitiveTypes.FL})
+	table.insert(self.primitives, {dx = dx, dy = dy, dt = -dt, d = d,
+								   gear = HybridAStar.Gear.Forward,
+								   steer = HybridAStar.Steer.Left,
+								   type = HybridAStar.MotionPrimitiveTypes.FL})
 	-- forward straight
-	table.insert(self.primitives, {dx = d, dy = 0, dt = 0, d = d, type = HybridAStar.MotionPrimitiveTypes.FS})
+	table.insert(self.primitives, {dx = d, dy = 0, dt = 0, d = d,
+								   gear = HybridAStar.Gear.Forward,
+								   steer = HybridAStar.Steer.Straight,
+								   type = HybridAStar.MotionPrimitiveTypes.FS})
 	if allowReverse then
 		-- reverse straight
-		table.insert(self.primitives, {dx = -d, dy = 0, dt = 0, d = d, type = HybridAStar.MotionPrimitiveTypes.RS})
+		table.insert(self.primitives, {dx = -d, dy = 0, dt = 0, d = d,
+									   gear = HybridAStar.Gear.Backward,
+									   steer = HybridAStar.Steer.Straight,
+									   type = HybridAStar.MotionPrimitiveTypes.RS})
 		-- reverse right
-		table.insert(self.primitives, {dx = -dx, dy = -dy, dt = dt, d = d, type = HybridAStar.MotionPrimitiveTypes.RR})
+		table.insert(self.primitives, {dx = -dx, dy = -dy, dt = dt, d = d,
+									   gear = HybridAStar.Gear.Backward,
+									   steer = HybridAStar.Steer.Right,
+									   type = HybridAStar.MotionPrimitiveTypes.RR})
 		-- reverse left
-		table.insert(self.primitives, {dx = -dx, dy = dy, dt = -dt, d = d, type = HybridAStar.MotionPrimitiveTypes.RL})
+		table.insert(self.primitives, {dx = -dx, dy = dy, dt = -dt, d = d,
+									   gear = HybridAStar.Gear.Backward,
+									   steer = HybridAStar.Steer.Left,
+									   type = HybridAStar.MotionPrimitiveTypes.RL})
 	end
 end
 
@@ -121,19 +181,7 @@ function HybridAStar.MotionPrimitives:createSuccessor(node, primitive)
 	local xSucc = node.x + primitive.dx * math.cos(node.t) - primitive.dy * math.sin(node.t)
 	local ySucc = node.y + primitive.dx * math.sin(node.t) + primitive.dy * math.cos(node.t)
 	local tSucc = node.t + primitive.dt
-	return State3D(xSucc, ySucc, tSucc, node.g, node, primitive)
-end
-
-function HybridAStar.MotionPrimitives.isSameDirection(p1, p2)
-	return p1.type:byte(1) == p2.type:byte(1)
-end
-
-function HybridAStar.MotionPrimitives.isReverse(p1)
-	return p1.type:byte(1) == string.byte('R')
-end
-
-function HybridAStar.MotionPrimitives.isTurn(p1)
-	return p1.type:byte(2) ~= string.byte('S')
+	return State3D(xSucc, ySucc, tSucc, node.g, node, primitive.gear, primitive.steer)
 end
 
 function HybridAStar.MotionPrimitives:__tostring()
@@ -160,7 +208,10 @@ function HybridAStar.SimpleMotionPrimitives:init(gridSize, allowReverse)
 	for angle = 0, 350, 10 do
 		dx = gridSize * math.cos(math.rad(angle))
 		dy = gridSize * math.sin(math.rad(angle))
-		table.insert(self.primitives, {dx = dx, dy = dy, dt = 0, d = gridSize, type = HybridAStar.MotionPrimitiveTypes.NA})
+		table.insert(self.primitives, {dx = dx, dy = dy, dt = 0, d = gridSize,
+									   gear = HybridAStar.Gear.Forward,
+									   steer = HybridAStar.Steer.Straight,
+									   type = HybridAStar.MotionPrimitiveTypes.NA})
 	end
 end
 
@@ -177,8 +228,14 @@ function HybridAStar.PolygonMotionPrimitives:init(configurationSpace)
 	-- dx assuming our configuration space is a line (may have to extend later to use a grid)
 	self.primitives = {}
 	-- d is 0 as it varies and therefore we calculate G when creating the successor
-	table.insert(self.primitives, {dx = 1, dy = 0, dt = 0, d = 0, type = HybridAStar.MotionPrimitiveTypes.FS})
-	table.insert(self.primitives, {dx = -1, dy = 0, dt = 0, d = 0, type = HybridAStar.MotionPrimitiveTypes.RS})
+	table.insert(self.primitives, {dx = 1, dy = 0, dt = 0, d = 0,
+								   gear = HybridAStar.Gear.Forward,
+								   steer = HybridAStar.Steer.Straight,
+								   type = HybridAStar.MotionPrimitiveTypes.FS})
+	table.insert(self.primitives, {dx = -1, dy = 0, dt = 0, d = 0,
+								   gear = HybridAStar.Gear.Backward,
+								   steer = HybridAStar.Steer.Straight,
+								   type = HybridAStar.MotionPrimitiveTypes.RS})
 end
 
 ---@param node State3D
@@ -315,6 +372,8 @@ function HybridAStar:init(yieldAfter, maxIterations)
 	-- if the goal heading is within self.deltaThetaDeg degrees we consider it reached
 	self.deltaThetaDegGoal = self.deltaThetaDeg
 	-- the same two parameters are used to discretize the continuous state space
+
+	self.rsSolver = ReedsSheppSolver()
 end
 
 --- Calculate penalty for this node. The penalty will be added to the cost of the node. This allows for
@@ -332,6 +391,31 @@ function HybridAStar:getMotionPrimitives(turnRadius, allowReverse)
 	return HybridAStar.MotionPrimitives(turnRadius, 6.75, allowReverse)
 end
 
+function HybridAStar:calculateAnalyticPath(start, goal, turnRadius, allowReverse)
+	local analyticPath
+	if allowReverse then
+		local rsActionSet = self.rsSolver:solve(start, goal, turnRadius)
+		analyticPath = rsActionSet:getWaypoints(start, turnRadius)
+		self:debug('Checking for Reeds-Shepp path at iteration %d, at %.1f%% distance to goal', self.iterations, 100 * start.h / self.distanceToGoal)
+	else
+		local dubinsPathDescriptor = dubins_shortest_path(start, goal, turnRadius)
+		analyticPath = dubins_path_sample_many(dubinsPathDescriptor, 1)
+		self:debug('Checking for Dubins path at iteration %d, at %.1f%% distance to goal', self.iterations, 100 * start.h / self.distanceToGoal)
+	end
+	return analyticPath
+end
+
+function HybridAStar:calculateAnalyticPathLength(start, goal, turnRadius, allowReverse)
+	if allowReverse then
+		local rsActionSet = self.rsSolver:solve(start, goal, turnRadius)
+		return rsActionSet:getLength(turnRadius)
+	else
+		local dubinsPathDescriptor = dubins_shortest_path(start, goal, turnRadius)
+		return dubins_path_length(dubinsPathDescriptor)
+	end
+end
+
+
 ---@param start State3D start node
 ---@param goal State3D goal node
 ---@param userData table anything you want to pass on to the isValidNodeFunc
@@ -344,7 +428,6 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 	self.isValidNodeFunc = isValidNodeFunc or self.isValidNode
 	-- a motion primitive is straight or a few degree turn to the right or left
 	local hybridMotionPrimitives = self:getMotionPrimitives(turnRadius, allowReverse)
-	print(tostring(hybridMotionPrimitives))
 	-- create the open list for the nodes as a binary heap where
 	-- the node with the lowest total cost is at the top
 	local openList = BinaryHeap.minUnique(function(a, b) return a:lt(b) end)
@@ -353,7 +436,13 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 	---@type HybridAStar.NodeList closedList
 	self.nodes = HybridAStar.NodeList(self.deltaPos, self.deltaThetaDeg)
 
-	start:updateH(goal, turnRadius)
+	if allowReverse then
+		self.analyticSolver = ReedsSheppSolver()
+	else
+		self.analyticSolver = DubinsSolver()
+	end
+
+	start:updateH(goal, 0)
 	self.distanceToGoal = start.h
 	start:insert(openList)
 	self.nodes:add(start)
@@ -370,6 +459,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 
 		if pred:equals(goal, self.deltaPosGoal, math.rad(self.deltaThetaDegGoal)) then
 			-- done!
+			self:debug('Popped the goal.')
 			self:rollUpPath(pred, goal)
 			return true, self.path
 		end
@@ -384,13 +474,14 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 		if not pred:isClosed() then
 			-- analytical expansion: try a Dubins path from here randomly, more often as we getting closer to the goal
 			if pred.h then
-				if math.random() > 1 - 0.05 * pred.h / self.distanceToGoal then
-					local dubinsPathDescriptor = dubins_shortest_path(pred, goal, turnRadius)
-					local dubinsPath = dubins_path_sample_many(dubinsPathDescriptor, 1)
-					self:debug('Checking for Dubins path at iteration %d, %.1f', self.iterations, pred.h / self.distanceToGoal)
-					if self:isPathValid(dubinsPath) then
-						self:debug('Found collision free Dubins path at iteration %d', self.iterations)
-						self:rollUpPath(pred, goal, dubinsPath)
+				if self.iterations == 0 or math.random() > 1 - 0.05 * pred.h / self.distanceToGoal then
+					---@type AnalyticSolution
+					local analyticSolution = self.analyticSolver:solve(pred, goal, turnRadius)
+					self:debug('Check analytical solution at iteration %d', self.iterations)
+					local analyticPath = analyticSolution:getWaypoints(pred, turnRadius)
+					if self:isPathValid(analyticPath) then
+						self:debug('Found collision free analytic path at iteration %d', self.iterations)
+						self:rollUpPath(pred, goal, analyticPath)
 						return true, self.path
 					end
 				end
@@ -401,6 +492,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 				local succ = hybridMotionPrimitives:createSuccessor(pred, primitive)
 				if succ:equals(goal, self.deltaPosGoal, math.rad(self.deltaThetaDegGoal)) then
 					succ.pred = succ.pred
+					self:debug('Successor at the goal.')
 					self:rollUpPath(succ, goal)
 					return true, self.path
 				end
@@ -411,7 +503,8 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 					-- an iteration or two to bring us out of that position
 					if self.iterations < 3 or self.isValidNodeFunc(succ, userData) then
 						succ:updateG(primitive, getNodePenaltyFunc(succ))
-						succ:updateH(goal, turnRadius)
+						local analyticSolution = self.analyticSolver:solve(succ, goal, turnRadius)
+						succ:updateH(goal, analyticSolution:getLength(turnRadius))
 						--self:debug('  %s', tostring(succ))
 						if existingSuccNode then
 							-- there is already a node at this (discretized) position

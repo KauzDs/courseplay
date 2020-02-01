@@ -25,7 +25,7 @@ https://github.com/mattbradley/AutonomousCar
 --- This class implements dozens of trigonometric equations described by Reeds and Shepp in their paper:
 --- "Optimal paths for a car that goes both forwards and backwards".
 --- @class ReedsSheppSolver
-ReedsSheppSolver = CpObject()
+ReedsSheppSolver = CpObject(AnalyticSolver)
 
 function ReedsSheppSolver:init()
     self.numPathWords = 48
@@ -34,23 +34,17 @@ end
 ---@param start State3D
 ---@param goal State3D
 function ReedsSheppSolver:solve(start, goal, turnRadius)
-    print('start', start)
-    print('goal', goal)
     -- Translate the goal so that the start position is at the origin
     -- Also normalize to turnRadius so all circles are unit circles (radius == 1)
     local newGoal = State3D((goal.x - start.x) / turnRadius, (goal.y - start.y) / turnRadius, self:wrapAngle(goal.t - start.t))
-    print('newGoal', newGoal)
     -- Rotate the goal so that the start orientation is 0
     newGoal:rotate(-start.t)
-
-    print('newGoal', newGoal)
 
     local bestPathLength = math.huge
     local bestWord, bestKey
     local bestT, bestU, bestV = 0, 0, 0
     for key, word in pairs(ReedsShepp.PathWords) do
         local potentialLength, t, u, v = self:calculatePathLength(newGoal, word)
-        print(key, potentialLength)
         if potentialLength < bestPathLength then
             bestPathLength = potentialLength
             bestWord = word
@@ -63,7 +57,6 @@ function ReedsSheppSolver:solve(start, goal, turnRadius)
     if bestPathLength == math.huge then
         return ReedsShepp.ActionSet(math.huge)
     end
-    print(bestKey, bestT, bestU, bestV)
     return self:getPath(bestWord, bestT, bestU, bestV)
 end
 
@@ -221,17 +214,17 @@ end
 
 function ReedsSheppSolver:timeflipTransform(actions)
     for _, a in ipairs(actions.actions) do
-        a.gear = (a.gear == ReedsShepp.Gear.Backward) and ReedsShepp.Gear.Forward or ReedsShepp.Gear.Backward
+        a.gear = (a.gear == HybridAStar.Gear.Backward) and HybridAStar.Gear.Forward or HybridAStar.Gear.Backward
     end                                                     
     return actions
 end
 
 function ReedsSheppSolver:reflectTransform(actions)
     for _, a in ipairs(actions.actions) do
-        if a.steer == ReedsShepp.Steer.Left then
-            a.steer = ReedsShepp.Steer.Right
-        elseif a.steer == ReedsShepp.Steer.Right then
-            a.steer = ReedsShepp.Steer.Left
+        if a.steer == HybridAStar.Steer.Left then
+            a.steer = HybridAStar.Steer.Right
+        elseif a.steer == HybridAStar.Steer.Right then
+            a.steer = HybridAStar.Steer.Left
         end
     end
     return actions
@@ -280,9 +273,9 @@ end
 
 function ReedsSheppSolver:LfSfLfpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Straight, ReedsShepp.Gear.Forward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Straight, HybridAStar.Gear.Forward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, v)
     return actions
 end
 
@@ -314,9 +307,9 @@ end
 
 function ReedsSheppSolver:LfSfRfpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Straight, ReedsShepp.Gear.Forward, u)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Forward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Straight, HybridAStar.Gear.Forward, u)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Forward, v)
     return actions
 end
 
@@ -347,9 +340,9 @@ end
 
 function ReedsSheppSolver:LfRbLfpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, v)
     return actions
 end
 
@@ -379,9 +372,9 @@ end
 
 function ReedsSheppSolver:LfRbLbpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Backward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Backward, v)
     return actions
 end
 
@@ -411,9 +404,9 @@ end
 
 function ReedsSheppSolver:LfRfLbpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Forward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Backward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Forward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Backward, v)
     return actions
 end
 
@@ -449,10 +442,10 @@ end
 
 function ReedsSheppSolver:LfRufLubRbpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Forward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Backward, u)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Forward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Backward, u)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, v)
     return actions
 end
 
@@ -487,10 +480,10 @@ end
 
 function ReedsSheppSolver:LfRubLubRfpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Backward, u)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Forward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Backward, u)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Forward, v)
     return actions
 end
 
@@ -524,10 +517,10 @@ end
 
 function ReedsSheppSolver:LfRbpi2SbLbpath(t, u, v)     
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, (math.pi / 2))
-    actions:addAction(ReedsShepp.Steer.Straight, ReedsShepp.Gear.Backward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Backward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, (math.pi / 2))
+    actions:addAction(HybridAStar.Steer.Straight, HybridAStar.Gear.Backward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Backward, v)
     return actions
 end
 
@@ -556,10 +549,10 @@ end
 
 function ReedsSheppSolver:LfRbpi2SbRbpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, (math.pi / 2))
-    actions:addAction(ReedsShepp.Steer.Straight, ReedsShepp.Gear.Backward, u)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, (math.pi / 2))
+    actions:addAction(HybridAStar.Steer.Straight, HybridAStar.Gear.Backward, u)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, v)
     return actions
 end
 
@@ -593,10 +586,10 @@ end
 
 function ReedsSheppSolver:LfSfRfpi2Lbpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Straight, ReedsShepp.Gear.Forward, u)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Forward, (math.pi / 2))
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Backward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Straight, HybridAStar.Gear.Forward, u)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Forward, (math.pi / 2))
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Backward, v)
     return actions
 end
 
@@ -625,10 +618,10 @@ end
 
 function ReedsSheppSolver:LfSfLfpi2Rbpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Straight, ReedsShepp.Gear.Forward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, (math.pi / 2))
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Straight, HybridAStar.Gear.Forward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, (math.pi / 2))
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, v)
     return actions
 end
 
@@ -662,10 +655,10 @@ end
 
 function ReedsSheppSolver:LfRbpi2SbLbpi2Rfpath(t, u, v)
     local actions = ReedsShepp.ActionSet()
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Forward, t)
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Backward, (math.pi / 2))
-    actions:addAction(ReedsShepp.Steer.Straight, ReedsShepp.Gear.Backward, u)
-    actions:addAction(ReedsShepp.Steer.Left, ReedsShepp.Gear.Backward, (math.pi / 2))
-    actions:addAction(ReedsShepp.Steer.Right, ReedsShepp.Gear.Forward, v)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Forward, t)
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Backward, (math.pi / 2))
+    actions:addAction(HybridAStar.Steer.Straight, HybridAStar.Gear.Backward, u)
+    actions:addAction(HybridAStar.Steer.Left, HybridAStar.Gear.Backward, (math.pi / 2))
+    actions:addAction(HybridAStar.Steer.Right, HybridAStar.Gear.Forward, v)
     return actions
 end

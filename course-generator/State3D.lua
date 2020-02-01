@@ -25,9 +25,10 @@ State3D = CpObject()
 ---@param t number heading (theta) in radians
 ---@param r number turn radius
 ---@param pred State3D predecessor node
----@param motionPrimitive HybridAstar.MotionPrimitive straight/left/right
+---@param gear HybridAstar.Gear straight/left/right
+---@param steer HybridAstar.Steer forward/backward
 ---@param userData table any data the user wants to associate with this state
-function State3D:init(x, y, t, g, pred, motionPrimitive, userData)
+function State3D:init(x, y, t, g, pred, gear, steer, userData)
     self.x = x
     self.y = y
     self.t = self:normalizeHeadingRad(t)
@@ -40,23 +41,23 @@ function State3D:init(x, y, t, g, pred, motionPrimitive, userData)
     self.open = false
     self.closed = false
     self.userData = userData
-    self.motionPrimitive = motionPrimitive
-    if motionPrimitive and HybridAStar.MotionPrimitives.isReverse(motionPrimitive) then
-        self.reverse = true
-    end
-        -- penalty for using this node, to avoid obstacles, stay in an area, etc.
+    self.gear = gear
+    self.steer = steer
+    -- penalty for using this node, to avoid obstacles, stay in an area, etc.
     self.nodePenalty = 0
 end
 
 function State3D:copy(other)
-    local this = State3D(other.x, other.y, other.t, other.g, other.pred, other.motionPrimitive, other.userData)
+    local this = State3D(other.x, other.y, other.t, other.g, other.pred, other.gear, other.steer, other.userData)
     this.h = other.h
     this.cost = other.cost
     this.goal = other.goal
     this.onOpenList = other.onOpenList
     this.closed = other.closed
     this.nodePenalty = other.nodePenalty
-    self.userData = userData
+    this.gear = other.gear
+    this.steer = other.steer
+    this.userData = other.userData
     return this
 end
 
@@ -110,7 +111,7 @@ end
 function State3D:equals(other, deltaPos, deltaTheta)
     local d = self:distance(other)
     if d < 2*deltaPos then
---        print(d, self:getCost())
+        --print(d, self.t, other.t, self.t - other.t, self:getCost())
     end
     return math.abs(self.x - other.x ) < deltaPos and
             math.abs(self.y - other.y ) < deltaPos and
@@ -121,17 +122,17 @@ end
 function State3D:updateG(primitive, userPenalty)
     local penalty = 1
     local reversePenalty = 4
-    if self.pred and self.pred.motionPrimitive then
+    if self.pred then
         -- penalize turning
-        if HybridAStar.MotionPrimitives.isTurn(primitive, self.pred.motionPrimitive) then
+        if self.pred.steer and self.steer ~= self.pred.steer then
             penalty = penalty * 1.1
         end
         -- penalize direction change
-        if not HybridAStar.MotionPrimitives.isSameDirection(primitive, self.pred.motionPrimitive) then
+        if self.pred.gear and self.gear ~= self.pred.gear then
             penalty = penalty * reversePenalty * 2
         end
         -- penalize reverse driving
-        if HybridAStar.MotionPrimitives.isReverse(primitive) then
+        if self.gear == HybridAStar.Gear.Backward then
             penalty = penalty * reversePenalty
         end
     end
@@ -143,27 +144,10 @@ function State3D:setNodePenalty(nodePenalty)
 end
 
 ---@param node State3D
-function State3D:updateH(goal, turnRadius)
+function State3D:updateH(goal, analyticPathLength)
     -- simple Eucledian heuristics
     local h = self:distance(goal)
-    local dubinsPath
-    local dubinsPathLength = 0
-    if h > turnRadius / 2 then
-        dubinsPath = dubins_shortest_path(self, goal, turnRadius)
-        dubinsPathLength = dubins_path_length(dubinsPath)
-        self.dubinsPathType = dubinsPath.type
-    end
-    self.h = math.max(h, dubinsPathLength)
-    self.cost = self.g + self.h
-    return dubinsPath
-end
-
-
----@param node State3D
-function State3D:updateHWithDubins(goal, turnRadius)
-    local dubinsPath = dubins_shortest_path(self, goal, turnRadius)
-    local dubinsPathLength = dubins_path_length(dubinsPath)
-    self.h = math.max(dubinsPathLength, self.h)
+    self.h = math.max(h, analyticPathLength)
     self.cost = self.g + self.h
 end
 
@@ -209,11 +193,10 @@ end
 
 function State3D:__tostring()
     local result
-    local type = self.motionPrimitive and tostring(self.motionPrimitive.type) or 'nil'
-    local pred = self.pred and self.pred.motionPrimitive and self.pred.motionPrimitive.type or 'nil'
-    result = string.format('x: %.2f y:%.2f t:%d type:%s dubins:%s g:%.2f h:%.2f c:%.2f closed:%s open:%s, pred = %s',
-            self.x, self.y, math.deg(self.t), type, tostring(self.dubinsPathType),
-            self.g, self.h, self.cost, tostring(self.closed), tostring(self.onOpenList), pred)
+    local gear = self.gear == HybridAStar.Gear.Forward and 'Forward' or 'Backward'
+    result = string.format('x: %.2f y:%.2f t:%d(%.2f) gear:%s g:%.2f h:%.2f c:%.2f closed:%s open:%s',
+            self.x, self.y, math.deg(self.t), self.t, gear,
+            self.g, self.h, self.cost, tostring(self.closed), tostring(self.onOpenList))
     return result
 end
 

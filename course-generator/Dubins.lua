@@ -151,15 +151,15 @@ function dubins_path_sample(path, t)
     -- generate the target configuration */
     p1 = path.param[1]
     p2 = path.param[2]
-    
+
     dubins_segment( p1,      qi,    q1, string.sub(path.type, 1, 1))
     dubins_segment( p2,      q1,    q2, string.sub(path.type, 2, 2))
-    
+
     if tprime < p1 then
         dubins_segment( tprime, qi, q, string.sub(path.type, 1, 1))
     elseif tprime < (p1 + p2) then
         dubins_segment(tprime - p1, q1, q, string.sub(path.type, 2, 2))
-    else 
+    else
         dubins_segment(tprime - p1 - p2, q2, q, string.sub(path.type, 3, 3))
     end
 
@@ -234,7 +234,7 @@ function dubins_RSR(ir)
         local tmp1 = math.atan2( (ir.ca - ir.cb), tmp0 )
         return mod2pi(ir.alpha - tmp1), math.sqrt(p_sq), mod2pi(tmp1 -ir.beta), "RSR"
     end
-end 
+end
 
 function dubins_LSR(ir)
     local p_sq = -2 + (ir.d_sq) + (2 * ir.c_ab) + (2 * ir.d * (ir.sa + ir.sb))
@@ -321,5 +321,5 @@ function DubinsSolver:solve(q0, q1, rho)
     if best_word == -1 then
         return nil
     end
-    return DubinsSolution(path)
+    return DubinsSolution(path), path.type
 end

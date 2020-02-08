@@ -17,8 +17,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ]]
 
 --- A node in a 3D state space, also known as a pose, which is a 2D postiion (x, y) and a heading
----@class State3D
-State3D = CpObject()
+---@class State3D : Vector
+State3D = CpObject(Vector)
 
 ---@param x number x position
 ---@param y number y position
@@ -41,7 +41,7 @@ function State3D:init(x, y, t, g, pred, gear, steer, userData)
     self.open = false
     self.closed = false
     self.userData = userData
-    self.gear = gear
+    self.gear = gear or HybridAStar.Gear.Forward
     self.steer = steer
     -- penalty for using this node, to avoid obstacles, stay in an area, etc.
     self.nodePenalty = 0
@@ -101,6 +101,7 @@ function State3D:isClosed()
     return self.closed
 end
 
+---@param other State3D
 function State3D:distance(other)
     local dx = other.x - self.x
     local dy = other.y - self.y
@@ -147,7 +148,7 @@ end
 function State3D:updateH(goal, analyticPathLength)
     -- simple Eucledian heuristics
     local h = self:distance(goal)
-    self.h = math.max(h, analyticPathLength)
+    self.h = math.max(h, analyticPathLength or 0)
     self.cost = self.g + self.h
 end
 
@@ -163,7 +164,6 @@ function State3D:addHeading(angle)
     self.t = self:normalizeHeadingRad(self.t + angle)
 end
 
-
 --- Make a 180 turn
 function State3D:reverseHeading()
     self.t = self:getReverseHeading()
@@ -178,17 +178,9 @@ function State3D:normalizeHeadingRad(t)
     end
 end
 
---- Rotate the 2D part by angle
-function State3D:rotate(angle)
-    self.x, self.y =
-        math.cos(angle) * self.x - math.sin(angle) * self.y,
-        math.sin(angle) * self.x + math.cos(angle) * self.y
-end
-
---- Add a vector dx, dy
-function State3D:add(dx, dy)
-    self.x = self.x + dx * math.cos(self.t) - dy * math.sin(self.t)
-    self.y = self.y + dx * math.sin(self.t) + dy * math.cos(self.t)
+--- Add a vector (+= operator, not creating a new Vector instance as __add)
+function State3D:add(v)
+    self.x, self.y = (self + v):unpack()
 end
 
 function State3D:__tostring()
@@ -199,4 +191,3 @@ function State3D:__tostring()
             self.g, self.h, self.cost, tostring(self.closed), tostring(self.onOpenList))
     return result
 end
-

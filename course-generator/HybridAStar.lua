@@ -30,6 +30,7 @@ https://github.com/karlkurzer/path_planner
 
 ]]
 
+
 --- Interface definition for all pathfinders
 ---@class PathfinderInterface
 PathfinderInterface = CpObject()
@@ -81,14 +82,13 @@ AnalyticSolution = CpObject()
 ---@param turnRadius number needed as the solution is usually normalized for the unit circle
 ---@return number length of the analytic solution in meters
 function AnalyticSolution:getLength(turnRadius)
-	print('upszi')
+	return 0
 end
 
 ---@param start State3D
 ---@param turnRadius number
 ---@return State3D[] array of path points of the solution
 function AnalyticSolution:getWaypoints(start, turnRadius)
-	print('upszi')
 end
 
 --- Interface for all analytic path problem solvers (Dubins and Reeds-Shepp)
@@ -102,6 +102,7 @@ AnalyticSolver = CpObject()
 ---@param turnRadius number
 ---@return AnalyticSolution a path descriptor
 function AnalyticSolver:solve(start, goal, turnRadius)
+	return AnalyticSolution()
 end
 
 ---@class HybridAStar
@@ -119,6 +120,67 @@ HybridAStar.Steer =
 	Straight = {},
 	Right = {}
 }
+
+--- Shorten path by d meters at the start
+---@param path Vector[]
+---@param d number
+function HybridAStar.shortenStart(path, d)
+	local dCut = d
+	local to = #path - 1
+	for i = 1, to  do
+		local segment = path[i + 1] - path[i]
+		-- check for something else than zero to make sure the new point does not overlap with the last we did not cut
+		if dCut < segment:length() - 0.1 then
+			segment:setLength(dCut)
+			path[1]:add(segment)
+			return true
+		end
+		dCut = dCut - segment:length()
+		table.remove(path, 1)
+	end
+end
+
+--- Shorten path by d meters at the end
+---@param path Vector[]
+---@param d number
+function HybridAStar.shortenEnd(path, d)
+	local dCut = d
+	local from = #path - 1
+	for i = from, 1, -1  do
+		local segment = path[i + 1] - path[i]
+		-- check for something else than zero to make sure the new point does not overlap with the last we did not cut
+		if dCut < segment:length() - 0.1 then
+			segment:setLength(dCut)
+			path[#path]:add(- segment)
+			return true
+		end
+		dCut = dCut - segment:length()
+		table.remove(path)
+	end
+end
+
+--- Shorten path by d meters at the end
+---@param path Vector[]
+function HybridAStar.smooth(path)
+	local function isNearCusp(i)
+		if path[i - 2].gear ~= path[i - 1].gear or
+				path[i - 1].gear ~= path[i].gear or
+				path[i + 1].gear ~= path[i].gear or
+				path[i + 2].gear ~= path[i + 1].gear then
+			return true
+		end
+	end
+	for j = 1, 3 do
+		for i = 3, #path - 2  do
+			-- leave points around a cusp alone
+			if not isNearCusp(i) then
+				local currentPoint = Vector(path[i].x, path[i].y)
+				local correction = - (path[i - 2] - 4 * path[i - 1] + 6 * currentPoint - 4 * path[i + 1] + path[i + 2]) / 16
+				path[i]:add(correction)
+			end
+		end
+	end
+end
 
 --- Motion primitives for node expansions, contains the dx/dy/dt values for
 --- driving straight/right/left. The idea is to calculate these once as they are
@@ -180,7 +242,8 @@ end
 function HybridAStar.MotionPrimitives:createSuccessor(node, primitive)
 	local xSucc = node.x + primitive.dx * math.cos(node.t) - primitive.dy * math.sin(node.t)
 	local ySucc = node.y + primitive.dx * math.sin(node.t) + primitive.dy * math.cos(node.t)
-	local tSucc = node.t + primitive.dt
+	-- if the motion primitive has a fixed heading, use that, otherwise the delta
+	local tSucc = primitive.t or node.t + primitive.dt
 	return State3D(xSucc, ySucc, tSucc, node.g, node, primitive.gear, primitive.steer)
 end
 
@@ -196,23 +259,22 @@ function HybridAStar.MotionPrimitives:getPrimitives()
 	return self.primitives
 end
 
---- A simple set of motion primitives to use with an A start algorlithm, pointing to 10 directions
+--- A simple set of motion primitives to use with an A start algorlithm, pointing to 8 directions
 ---@param gridSize number search grid size in meters
 HybridAStar.SimpleMotionPrimitives = CpObject(HybridAStar.MotionPrimitives)
 function HybridAStar.SimpleMotionPrimitives:init(gridSize, allowReverse)
-	local dx = gridSize
-	local dy = gridSize
-	local d = math.sqrt(dx * dx + dy * dy)
 	-- motion primitive table:
 	self.primitives = {}
-	for angle = 0, 350, 10 do
-		dx = gridSize * math.cos(math.rad(angle))
-		dy = gridSize * math.sin(math.rad(angle))
-		table.insert(self.primitives, {dx = dx, dy = dy, dt = 0, d = gridSize,
-									   gear = HybridAStar.Gear.Forward,
-									   steer = HybridAStar.Steer.Straight,
-									   type = HybridAStar.MotionPrimitiveTypes.NA})
-	end
+	local d = gridSize
+	local dSqrt2 = math.sqrt(2) * d
+	table.insert(self.primitives, {dx =  d, dy =  0, t = 0, d = d, gear = HybridAStar.Gear.Forward, steer = HybridAStar.Steer.Straight, type = HybridAStar.MotionPrimitiveTypes.NA})
+	table.insert(self.primitives, {dx =  d, dy =  d, t = 1 * math.pi / 4, d = dSqrt2, gear = HybridAStar.Gear.Forward, steer = HybridAStar.Steer.Straight, type = HybridAStar.MotionPrimitiveTypes.NA})
+	table.insert(self.primitives, {dx =  0, dy =  d, t = 2 * math.pi / 4, d = d, gear = HybridAStar.Gear.Forward, steer = HybridAStar.Steer.Straight, type = HybridAStar.MotionPrimitiveTypes.NA})
+	table.insert(self.primitives, {dx = -d, dy =  d, t = 3 * math.pi / 4 , d = dSqrt2, gear = HybridAStar.Gear.Forward, steer = HybridAStar.Steer.Straight, type = HybridAStar.MotionPrimitiveTypes.NA})
+	table.insert(self.primitives, {dx = -d, dy =  0, t = 4 * math.pi / 4, d = d, gear = HybridAStar.Gear.Forward, steer = HybridAStar.Steer.Straight, type = HybridAStar.MotionPrimitiveTypes.NA})
+	table.insert(self.primitives, {dx = -d, dy = -d, t = 6 * math.pi / 4, d = dSqrt2, gear = HybridAStar.Gear.Forward, steer = HybridAStar.Steer.Straight, type = HybridAStar.MotionPrimitiveTypes.NA})
+	table.insert(self.primitives, {dx =  0, dy = -d, t = 6 * math.pi / 4, d = d, gear = HybridAStar.Gear.Forward, steer = HybridAStar.Steer.Straight, type = HybridAStar.MotionPrimitiveTypes.NA})
+	table.insert(self.primitives, {dx =  d, dy = -d, t = 7 * math.pi / 4, d = dSqrt2, gear = HybridAStar.Gear.Forward, steer = HybridAStar.Steer.Straight, type = HybridAStar.MotionPrimitiveTypes.NA})
 end
 
 --- Motion primitives for a fixed configuration space where the nodes can only be expanded
@@ -372,8 +434,7 @@ function HybridAStar:init(yieldAfter, maxIterations)
 	-- if the goal heading is within self.deltaThetaDeg degrees we consider it reached
 	self.deltaThetaDegGoal = self.deltaThetaDeg
 	-- the same two parameters are used to discretize the continuous state space
-
-	self.rsSolver = ReedsSheppSolver()
+	self.analyticSolverEnabled = true
 end
 
 --- Calculate penalty for this node. The penalty will be added to the cost of the node. This allows for
@@ -390,31 +451,6 @@ end
 function HybridAStar:getMotionPrimitives(turnRadius, allowReverse)
 	return HybridAStar.MotionPrimitives(turnRadius, 6.75, allowReverse)
 end
-
-function HybridAStar:calculateAnalyticPath(start, goal, turnRadius, allowReverse)
-	local analyticPath
-	if allowReverse then
-		local rsActionSet = self.rsSolver:solve(start, goal, turnRadius)
-		analyticPath = rsActionSet:getWaypoints(start, turnRadius)
-		self:debug('Checking for Reeds-Shepp path at iteration %d, at %.1f%% distance to goal', self.iterations, 100 * start.h / self.distanceToGoal)
-	else
-		local dubinsPathDescriptor = dubins_shortest_path(start, goal, turnRadius)
-		analyticPath = dubins_path_sample_many(dubinsPathDescriptor, 1)
-		self:debug('Checking for Dubins path at iteration %d, at %.1f%% distance to goal', self.iterations, 100 * start.h / self.distanceToGoal)
-	end
-	return analyticPath
-end
-
-function HybridAStar:calculateAnalyticPathLength(start, goal, turnRadius, allowReverse)
-	if allowReverse then
-		local rsActionSet = self.rsSolver:solve(start, goal, turnRadius)
-		return rsActionSet:getLength(turnRadius)
-	else
-		local dubinsPathDescriptor = dubins_shortest_path(start, goal, turnRadius)
-		return dubins_path_length(dubinsPathDescriptor)
-	end
-end
-
 
 ---@param start State3D start node
 ---@param goal State3D goal node
@@ -450,12 +486,11 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 	self.iterations = 0
 	self.expansions = 0
 	self.yields = 0
-
 	while openList:size() > 0 and self.iterations < self.maxIterations do
 		-- pop lowest cost node from queue
 		---@type State3D
 		local pred = State3D.pop(openList)
-		--self:debug('%s', tostring(pred))
+		--self:debug('pop %s', tostring(pred))
 
 		if pred:equals(goal, self.deltaPosGoal, math.rad(self.deltaThetaDegGoal)) then
 			-- done!
@@ -472,15 +507,17 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 		end
 
 		if not pred:isClosed() then
-			-- analytical expansion: try a Dubins path from here randomly, more often as we getting closer to the goal
+			-- analytical expansion: try a Dubins/Reeds-Shepp path from here randomly, more often as we getting closer to the goal
 			if pred.h then
-				if self.iterations == 0 or math.random() > 1 - 0.05 * pred.h / self.distanceToGoal then
+				if self.analyticSolverEnabled and self.iterations == 0 or math.random() > 2 * pred.h / self.distanceToGoal then
 					---@type AnalyticSolution
-					local analyticSolution = self.analyticSolver:solve(pred, goal, turnRadius)
-					self:debug('Check analytical solution at iteration %d', self.iterations)
+					local analyticSolution, pathType = self.analyticSolver:solve(pred, goal, turnRadius, allowReverse)
+					self:debug('Check analytical solution at iteration %d, %.1f, %.1f', self.iterations, pred.h, pred.h / self.distanceToGoal)
 					local analyticPath = analyticSolution:getWaypoints(pred, turnRadius)
 					if self:isPathValid(analyticPath) then
-						self:debug('Found collision free analytic path at iteration %d', self.iterations)
+						self:debug('Found collision free analytic path (%s) at iteration %d', pathType, self.iterations)
+						-- remove first node of returned analytic path as it is the same as pred
+						table.remove(analyticPath, 1)
 						self:rollUpPath(pred, goal, analyticPath)
 						return true, self.path
 					end
@@ -503,9 +540,13 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 					-- an iteration or two to bring us out of that position
 					if self.iterations < 3 or self.isValidNodeFunc(succ, userData) then
 						succ:updateG(primitive, getNodePenaltyFunc(succ))
-						local analyticSolution = self.analyticSolver:solve(succ, goal, turnRadius)
-						succ:updateH(goal, analyticSolution:getLength(turnRadius))
-						--self:debug('  %s', tostring(succ))
+						if self.analyticSolverEnabled then
+							local analyticSolution = self.analyticSolver:solve(succ, goal, turnRadius, allowReverse)
+							succ:updateH(goal, analyticSolution:getLength(turnRadius))
+						else
+							succ:updateH(goal)
+						end
+						--self:debug('     %s', tostring(succ))
 						if existingSuccNode then
 							-- there is already a node at this (discretized) position
 							if existingSuccNode:getCost() + 0.01 > succ:getCost() then
@@ -555,7 +596,8 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 end
 
 function HybridAStar:isPathValid(path)
-	for _, p in ipairs(path) do
+	if not path or #path < 2 then return false end
+	for i, p in ipairs(path) do
 		if not self.isValidNodeFunc({x = p.x, y = p.y}) then
 			return false
 		end
@@ -593,10 +635,11 @@ AStar = CpObject(HybridAStar)
 
 function AStar:init(yieldAfter)
 	HybridAStar.init(self, yieldAfter)
-	self.deltaPos = 5
+	self.deltaPos = 2
 	self.deltaPosGoal = self.deltaPos
 	self.deltaThetaDeg = 181
 	self.deltaThetaDegGoal = self.deltaThetaDeg
+	self.analyticSolverEnabled = true
 end
 
 function AStar:getMotionPrimitives(turnRadius, allowReverse)
@@ -640,8 +683,6 @@ function HybridAStarWithAStarInTheMiddle:init(hybridRange, yieldAfter, maxIterat
 	self.hybridRange = hybridRange
 	self.yieldAfter = yieldAfter or 100
 	self.hybridAStarPathFinder = HybridAStar(self.yieldAfter, maxIterations)
-	-- for debug purposes only
-	self.nodes = self.hybridAStarPathFinder.nodes
 	self.aStarPathFinder = self:getAStar()
 end
 
@@ -672,14 +713,7 @@ function HybridAStarWithAStarInTheMiddle:start(start, goal, turnRadius, userData
         self:debug('Goal is closer than %d, use one phase pathfinding only', self.hybridRange * 3)
 		self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
 		self.currentPathfinder = self.hybridAStarPathFinder
-		-- swap start and goal as the path will always start exactly at the start point but will only approximately end
-		-- at the goal. Here we want to end up exactly on the goal point
-		self.startNode:reverseHeading()
-		self.goalNode:reverseHeading()
-        -- TODO: solve this somehow cleaner, we have to pass on to the isValidNodeFunc the fact that we are searching
-        -- backwards so in case of collision check the vehicle must be turned 180
-		self.userData.reverseHeading = true
-		return self:resume(self.goalNode, self.startNode, turnRadius, self.userData, self.allowReverse, getNodePenaltyFunc, isValidNodeFunc)
+		return self:resume(self.startNode, self.goalNode, turnRadius, self.userData, self.allowReverse, getNodePenaltyFunc, isValidNodeFunc)
 	else
 		self.phase = self.MIDDLE
         self:debug('Finding direct path between start and goal...')
@@ -704,59 +738,47 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 		if self.phase == self.ALL_HYBRID then
 			-- start and goal near, just one phase, all hybrid, we are done
 			-- remove last waypoint as it is the approximate goal point and may not be aligned
-			table.remove(path)
-			-- since we generated a path from the goal -> start we now have to reverse it
-			self:reverseTable(path)
 			local result = Polygon:new(path)
 			result:calculateData()
 			result:space(math.pi / 20, 2)
-			self:fixReverseForCourseplay(result)
 			return true, result
 		elseif self.phase == self.MIDDLE then
 			if not path or #path < 2 then return true, nil end
             -- middle part ready, now trim start and end to make room for the hybrid parts
-			self.middlePath = Polyline:new(path)
-			self.middlePath:calculateData()
-			self.middlePath:shortenStart(self.hybridRange)
-			self.middlePath:shortenEnd(self.hybridRange)
+			self.middlePath = path
+			HybridAStar.shortenStart(self.middlePath, self.hybridRange)
+			HybridAStar.shortenEnd(self.middlePath, self.hybridRange)
 			if #self.middlePath < 2 then return true, nil end
             self:debug('Finding path between start and middle section...')
 			self.phase = self.START_TO_MIDDLE
 			-- generate a hybrid part from the start to the middle section's start
 			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
 			self.currentPathfinder = self.hybridAStarPathFinder
-			local goal = State3D(self.middlePath[1].x, self.middlePath[1].y, self.middlePath[1].nextEdge.angle)
+			local goal = State3D(self.middlePath[1].x, self.middlePath[1].y, (self.middlePath[2] - self.middlePath[1]):heading())
             --print(tostring(self.middlePath))
             --print(tostring(self.startNode))
             --print(tostring(goal))
-			self.userData.reverseHeading = false
 			return self:resume(self.startNode, goal, self.turnRadius, self.userData, self.allowReverse, self.getNodePenaltyFunc, self.isValidNodeFunc)
 		elseif self.phase == self.START_TO_MIDDLE then
 			-- start and middle sections ready
 			-- create start point at the last waypoint of middlePath before shortening
-			-- swap start and goal as the path will always start exactly at the start point but will only approximately end
-			-- at the goal. Here we want to end up exactly on the goal point
-			local start = State3D(self.middlePath[#self.middlePath].x, self.middlePath[#self.middlePath].y, self.middlePath[#self.middlePath].prevEdge.angle)
-			start:reverseHeading()
+			local start = State3D(self.middlePath[#self.middlePath].x, self.middlePath[#self.middlePath].y,
+					(self.middlePath[#self.middlePath] - self.middlePath[#self.middlePath - 1]):heading())
 			-- now shorten both ends of middlePath to avoid short fwd/reverse sections due to overlaps (as the patfhinding may end anywhere within
 			-- deltaPosGoal
-			self.middlePath:shortenStart(self.hybridAStarPathFinder.deltaPosGoal * 2)
-			self.middlePath:shortenEnd(self.hybridAStarPathFinder.deltaPosGoal * 2)
+			HybridAStar.shortenStart(self.middlePath,self.hybridAStarPathFinder.deltaPosGoal * 2)
+			HybridAStar.shortenEnd(self.middlePath, self.hybridAStarPathFinder.deltaPosGoal * 2)
 			-- append middle to start
-			self.path = Polygon:new(path)
-			-- ignore first and last wp of middle path
+			self.path = path
 			for i = 1, #self.middlePath do
-				self.path:add(self.middlePath[i])
+				table.insert(self.path, self.middlePath[i])
 			end
-			self.path:calculateData()
 			-- generate middle to end
 			self.phase = self.MIDDLE_TO_END
             self:debug('Finding path between middle section and goal (allow reverse %s)...', tostring(self.allowReverse))
 			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
 			self.currentPathfinder = self.hybridAStarPathFinder
-			self.userData.reverseHeading = true
-			self.goalNode:reverseHeading()
-            return self:resume(self.goalNode, start, self.turnRadius, self.userData, self.allowReverse, self.getNodePenaltyFunc, self.isValidNodeFunc)
+            return self:resume(start, self.goalNode, self.turnRadius, self.userData, self.allowReverse, self.getNodePenaltyFunc, self.isValidNodeFunc)
 		else
 			if path then
 				-- last piece is ready, this was generated from the goal point to the end of the middle section so
@@ -764,14 +786,10 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 				-- and then add the last section in reverse order
 				-- also, for reasons we don't fully understand, this section may have a direction change at the last waypoint,
 				-- so we just ignore the last one
-				for i = #path, 1, -1 do
-					self.path:add(path[i])
+				for i = 1, #path do
+					table.insert(self.path, path[i])
 				end
-				self.path:calculateData()
-                self.path:smooth(math.pi / 30, math.pi / 2, 3, 10, #self.path - 10)
-				self.path:calculateData()
-				self.path:space(math.pi / 20, 2)
-				self:fixReverseForCourseplay(self.path)
+				HybridAStar.smooth(self.path)
 			end
 			return true, self.path
 		end
@@ -834,3 +852,4 @@ end
 function HybridAStarWithPolygonInTheMiddle:getAStar()
 	return AStarOnPolygon(self.yieldAfter, self.polygon, self.deltaPosGoal)
 end
+

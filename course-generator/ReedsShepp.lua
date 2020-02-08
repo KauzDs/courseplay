@@ -25,66 +25,68 @@ ReedsShepp = CpObject()
 
 -- The PathWords enum lists every possible Reeds-Shepp pattern. L, S, or R described the steering direction (left, straight, or right),
 -- and f or b describe the gear (forward or backward).
+-- Some may have attributes added so simpler driving patterns can be preferred even if they are slightly longer than
+-- a more complicated one.
 ReedsShepp.PathWords =
 {
-    LfSfLf = {}, -- Reeds-Shepp 8.1: CSC, same turn
-    LbSbLb = {},
-    RfSfRf = {},
-    RbSbRb = {},
+    LfSfLf = {p = 0.90, startForward = true, forwardOnly = true}, -- Reeds-Shepp 8.1: CSC, same turn
+    LbSbLb = {p = 0.93},
+    RfSfRf = {p = 0.90, startForward = true, forwardOnly = true},
+    RbSbRb = {p = 0.93},
 
 
-    LfSfRf = {}, -- Reeds-Shepp 8.2: CSC, different turn
-    LbSbRb = {},
-    RfSfLf = {},
-    RbSbLb = {},
+    LfSfRf = {p = 0.90, startForward = true, forwardOnly = true}, -- Reeds-Shepp 8.2: CSC, different turn
+    LbSbRb = {p = 0.93},
+    RfSfLf = {p = 0.90, startForward = true, forwardOnly = true},
+    RbSbLb = {p = 0.93},
 
-    LfRbLf = {}, -- Reeds-Shepp 8.3: C|C|C
-    LbRfLb = {},
-    RfLbRf = {},
-    RbLfRb = {},
+    LfRbLf = {p = 0.93, startForward = true}, -- Reeds-Shepp 8.3: C|C|C
+    LbRfLb = {p = 0.94},
+    RfLbRf = {p = 0.93, startForward = true},
+    RbLfRb = {p = 0.94},
 
-    LfRbLb = {}, -- Reeds-Shepp 8.4: C|CC
-    LbRfLf = {},
-    RfLbRb = {},
-    RbLfRf = {},
-    LfRfLb = {}, -- Reeds-Shepp 8.4: CC|C
-    LbRbLf = {},
-    RfLfRb = {},
-    RbLbRf = {},
+    LfRbLb = {p = 0.93, startForward = true}, -- Reeds-Shepp 8.4: C|CC
+    LbRfLf = {p = 0.94},
+    RfLbRb = {p = 0.93, startForward = true},
+    RbLfRf = {p = 0.94},
+    LfRfLb = {p = 0.93, startForward = true}, -- Reeds-Shepp 8.4: CC|C
+    LbRbLf = {p = 0.94},
+    RfLfRb = {p = 0.93, startForward = true},
+    RbLbRf = {p = 0.94},
 
-    LfRufLubRb = {}, -- Reeds-Shepp 8.7: CCu|CuC
+    LfRufLubRb = {startForward = true}, -- Reeds-Shepp 8.7: CCu|CuC
     LbRubLufRf = {},
-    RfLufRubLb = {},
+    RfLufRubLb = {startForward = true},
     RbLubRufLf = {},
 
-    LfRubLubRf = {}, -- Reeds-Shepp 8.8: C|CuCu|C
+    LfRubLubRf = {startForward = true}, -- Reeds-Shepp 8.8: C|CuCu|C
     LbRufLufRb = {},
-    RfLubRubLf = {},
+    RfLubRubLf = {startForward = true},
     RbLufRufLb = {},
 
-    LfRbpi2SbLb = {}, -- Reeds-Shepp 8.9: C|C(pi/2)SC, same turn
+    LfRbpi2SbLb = {startForward = true}, -- Reeds-Shepp 8.9: C|C(pi/2)SC, same turn
     LbRfpi2SfLf = {},
-    RfLbpi2SbRb = {},
+    RfLbpi2SbRb = {startForward = true},
     RbLfpi2SfRf = {},
 
-    LfRbpi2SbRb = {}, -- Reeds-Shepp 8.10: C|C(pi/2)SC, different turn
+    LfRbpi2SbRb = {startForward = true}, -- Reeds-Shepp 8.10: C|C(pi/2)SC, different turn
     LbRfpi2SfRf = {},
-    RfLbpi2SbLb = {},
+    RfLbpi2SbLb = {startForward = true},
     RbLfpi2SfLf = {},
 
-    LfSfRfpi2Lb = {}, -- Reeds-Shepp 8.9 (reversed): CSC(pi/2)|C, same turn
+    LfSfRfpi2Lb = {startForward = true}, -- Reeds-Shepp 8.9 (reversed): CSC(pi/2)|C, same turn
     LbSbRbpi2Lf = {},
-    RfSfLfpi2Rb = {},
+    RfSfLfpi2Rb = {startForward = true},
     RbSbLbpi2Rf = {},
 
-    LfSfLfpi2Rb = {}, -- Reeds-Shepp 8.10 (reversed): CSC(pi/2)|C, different turn
+    LfSfLfpi2Rb = {startForward = true}, -- Reeds-Shepp 8.10 (reversed): CSC(pi/2)|C, different turn
     LbSbLbpi2Rf = {},
-    RfSfRfpi2Lb = {},
+    RfSfRfpi2Lb = {startForward = true},
     RbSbRbpi2Lf = {},
 
-    LfRbpi2SbLbpi2Rf = {}, -- Reeds-Shepp 8.11: C|C(pi/2)SC(pi/2)|C
+    LfRbpi2SbLbpi2Rf = {startForward = true}, -- Reeds-Shepp 8.11: C|C(pi/2)SC(pi/2)|C
     LbRfpi2SfLfpi2Rb = {},
-    RfLbpi2SbRbpi2Lf = {},
+    RfLbpi2SbRbpi2Lf = {startForward = true},
     RbLfpi2SfRfpi2Lb = {}
 }
 
@@ -182,12 +184,12 @@ function ReedsShepp.ActionSet:getWaypoints(start, turnRadius)
 
             for _ = 1, n do
                 prev = State3D:copy(prev)
-                prev:add(dx, dy)
+                local v = Vector(dx, dy)
+                prev:add(v:rotate(prev.t))
                 prev:addHeading(pieceAngle)
                 prev.gear = action.gear
                 prev.steer = action.steer
                 table.insert(waypoints, prev)
-                print(prev)
             end
         else
             local pieceLength = action.length * turnRadius / n

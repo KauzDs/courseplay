@@ -33,7 +33,7 @@ end
 
 ---@param start State3D
 ---@param goal State3D
-function ReedsSheppSolver:solve(start, goal, turnRadius)
+function ReedsSheppSolver:solve(start, goal, turnRadius, allowReverse)
     -- Translate the goal so that the start position is at the origin
     -- Also normalize to turnRadius so all circles are unit circles (radius == 1)
     local newGoal = State3D((goal.x - start.x) / turnRadius, (goal.y - start.y) / turnRadius, self:wrapAngle(goal.t - start.t))
@@ -45,6 +45,10 @@ function ReedsSheppSolver:solve(start, goal, turnRadius)
     local bestT, bestU, bestV = 0, 0, 0
     for key, word in pairs(ReedsShepp.PathWords) do
         local potentialLength, t, u, v = self:calculatePathLength(newGoal, word)
+        if potentialLength < math.huge then
+           --   print(key, potentialLength)
+        end
+        potentialLength = potentialLength * (word.p or 1)
         if potentialLength < bestPathLength then
             bestPathLength = potentialLength
             bestWord = word
@@ -57,7 +61,7 @@ function ReedsSheppSolver:solve(start, goal, turnRadius)
     if bestPathLength == math.huge then
         return ReedsShepp.ActionSet(math.huge)
     end
-    return self:getPath(bestWord, bestT, bestU, bestV)
+    return self:getPath(bestWord, bestT, bestU, bestV), bestKey
 end
 
 function ReedsSheppSolver:calculatePathLength(goal, word)

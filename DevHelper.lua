@@ -214,10 +214,10 @@ function DevHelper:showVehicleSize()
     local x, z, yRot = PathfinderUtil.getNodePositionAndDirection(AIDriverUtil.getDirectionNode(vehicle))
     local node = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
     if not g_devHelper.helperNode then
-        g_devHelper.helperNode = courseplay.createNode('pathfinderHelper', node.x, -node.y, 0)
+        g_devHelper.helperNode = courseplay.createNode('pathfinderHelper', node.position.x, -node.position.y, 0)
     end
-    local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.x, 0, -node.y);
-    setTranslation(g_devHelper.helperNode, node.x, y, -node.y)
+    local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.position.x, 0, -node.position.y);
+    setTranslation(g_devHelper.helperNode, node.position.x, y, -node.position.y)
     setRotation(g_devHelper.helperNode, 0, courseGenerator.toCpAngle(node.t), 0)
    
     if self.vehicleData then

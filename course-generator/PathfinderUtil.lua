@@ -171,13 +171,15 @@ end
 
 function PathfinderUtil.findCollidingShapes(myCollisionData, yRot, vehicleData)
     local center = myCollisionData.center
+    local width = math.abs(vehicleData.dRight) + math.abs(vehicleData.dLeft)
+    local length = math.abs(vehicleData.dFront) + math.abs(vehicleData.dRear)
     local collidingShapes = overlapBox(
             center.x, center.y + 1, center.z,
             0, yRot, 0,
-            vehicleData.dRight + vehicleData.dLeft, 1, vehicleData.dFront + vehicleData.dRear,
+            width, 1, length,
             '', nil, AIVehicleUtil.COLLISION_MASK, true, true, true)
     if collidingShapes > 0 then
-        --courseplay.debugFormat(7, 'x = %.1f, z = %.1f, %d', center.x, center.z, collidingShapes)
+        --courseplay.debugFormat(7, 'colliding shapes at x = %.1f, z = %.1f, %d', center.x, center.z, collidingShapes)
     end
     return collidingShapes
 end
@@ -304,6 +306,9 @@ function PathfinderUtil.isValidNode(node, context)
     -- for debug purposes only, store validity info on node
     node.collidingShapes = PathfinderUtil.findCollidingShapes(myCollisionData, yRot, context.vehicleData)
     node.isColliding, node.vehicle = PathfinderUtil.findCollidingVehicles(myCollisionData, PathfinderUtil.helperNode, context.vehicleData)
+    --print(tostring(node))
+    --print(node.isColliding)
+    --print(node.collidingShapes)
     return (not node.isColliding and node.collidingShapes == 0)
 end
 

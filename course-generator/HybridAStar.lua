@@ -202,6 +202,11 @@ function HybridAStar.MotionPrimitives:init(r, expansionDegree, allowReverse)
 	local dt = math.rad(expansionDegree)
 	local dx = r * math.sin(dt)
 	local dy = r - r * math.cos(dt)
+	-- forward straight
+	table.insert(self.primitives, {dx = d, dy = 0, dt = 0, d = d,
+								   gear = HybridAStar.Gear.Forward,
+								   steer = HybridAStar.Steer.Straight,
+								   type = HybridAStar.MotionPrimitiveTypes.FS})
 	-- forward right
 	table.insert(self.primitives, {dx = dx, dy = -dy, dt = dt, d = d,
 								   gear = HybridAStar.Gear.Forward,
@@ -212,11 +217,6 @@ function HybridAStar.MotionPrimitives:init(r, expansionDegree, allowReverse)
 								   gear = HybridAStar.Gear.Forward,
 								   steer = HybridAStar.Steer.Left,
 								   type = HybridAStar.MotionPrimitiveTypes.FL})
-	-- forward straight
-	table.insert(self.primitives, {dx = d, dy = 0, dt = 0, d = d,
-								   gear = HybridAStar.Gear.Forward,
-								   steer = HybridAStar.Steer.Straight,
-								   type = HybridAStar.MotionPrimitiveTypes.FS})
 	if allowReverse then
 		-- reverse straight
 		table.insert(self.primitives, {dx = -d, dy = 0, dt = 0, d = d,
@@ -404,6 +404,19 @@ function HybridAStar.NodeList:add(node)
 	end
 end
 
+function HybridAStar.NodeList:getHeuristicValue(node, goal)
+	local heuristicNode = self:get(node)
+	if heuristicNode then
+		local diff  = node:distance(goal) - heuristicNode.h
+		if math.abs(diff) > 1 then
+			print('diff', diff, node:distance(goal), heuristicNode.h)
+		end
+		return heuristicNode.h
+	else
+		return node:distance(goal)
+	end
+end
+
 function HybridAStar.NodeList:print()
 	for _, row in pairs(self.nodes) do
 		for _, column in pairs(row) do
@@ -432,7 +445,7 @@ function HybridAStar:init(yieldAfter, maxIterations)
 	-- if the goal is within self.deltaPos meters we consider it reached
 	self.deltaPosGoal = self.deltaPos
 	-- if the goal heading is within self.deltaThetaDeg degrees we consider it reached
-	self.deltaThetaDegGoal = self.deltaThetaDeg
+	self.deltaThetaGoal = math.rad(self.deltaThetaDeg)
 	-- the same two parameters are used to discretize the continuous state space
 	self.analyticSolverEnabled = true
 end
@@ -458,7 +471,7 @@ end
 ---@param allowReverse boolean allow reverse driving
 ---@param getNodePenaltyFunc function get penalty for a node, see getNodePenalty()
 ---@param isValidNodeFunc function function to check if a node should even be considered
-function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, getNodePenaltyFunc, isValidNodeFunc)
+function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, getNodePenaltyFunc, isValidNodeFunc, heuristicGrid)
 	self:debug('Start pathfinding between %s and %s', tostring(start), tostring(goal))
 	if not getNodePenaltyFunc then getNodePenaltyFunc = self.getNodePenalty end
 	self.isValidNodeFunc = isValidNodeFunc or self.isValidNode
@@ -481,7 +494,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 	start:updateH(goal, 0)
 	self.distanceToGoal = start.h
 	start:insert(openList)
-	self.nodes:add(start)
+	--self.nodes:add(start)
 
 	self.iterations = 0
 	self.expansions = 0
@@ -492,9 +505,9 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 		local pred = State3D.pop(openList)
 		--self:debug('pop %s', tostring(pred))
 
-		if pred:equals(goal, self.deltaPosGoal, math.rad(self.deltaThetaDegGoal)) then
+		if pred:equals(goal, self.deltaPosGoal, self.deltaThetaGoal) then
 			-- done!
-			self:debug('Popped the goal.')
+			self:debug('Popped the goal (%d).', self.iterations)
 			self:rollUpPath(pred, goal)
 			return true, self.path
 		end
@@ -509,7 +522,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 		if not pred:isClosed() then
 			-- analytical expansion: try a Dubins/Reeds-Shepp path from here randomly, more often as we getting closer to the goal
 			if pred.h then
-				if self.analyticSolverEnabled and self.iterations == 0 or math.random() > 2 * pred.h / self.distanceToGoal then
+				if self.analyticSolverEnabled and (math.random() > 3 * pred.h / self.distanceToGoal or pred.h < 4 * turnRadius) then
 					---@type AnalyticSolution
 					local analyticSolution, pathType = self.analyticSolver:solve(pred, goal, turnRadius, allowReverse)
 					self:debug('Check analytical solution at iteration %d, %.1f, %.1f', self.iterations, pred.h, pred.h / self.distanceToGoal)
@@ -527,9 +540,9 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 			for _, primitive in ipairs(hybridMotionPrimitives:getPrimitives()) do
 				---@type State3D
 				local succ = hybridMotionPrimitives:createSuccessor(pred, primitive)
-				if succ:equals(goal, self.deltaPosGoal, math.rad(self.deltaThetaDegGoal)) then
+				if succ:equals(goal, self.deltaPosGoal, self.deltaThetaGoal) then
 					succ.pred = succ.pred
-					self:debug('Successor at the goal.')
+					self:debug('Successor at the goal (%d).', self.iterations)
 					self:rollUpPath(succ, goal)
 					return true, self.path
 				end
@@ -540,25 +553,25 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 					-- an iteration or two to bring us out of that position
 					if self.iterations < 3 or self.isValidNodeFunc(succ, userData) then
 						succ:updateG(primitive, getNodePenaltyFunc(succ))
+						local analyticSolutionCost, heuristicCost = 0, 0
 						if self.analyticSolverEnabled then
 							local analyticSolution = self.analyticSolver:solve(succ, goal, turnRadius, allowReverse)
-							succ:updateH(goal, analyticSolution:getLength(turnRadius))
-						else
-							succ:updateH(goal)
+							analyticSolutionCost = analyticSolution:getLength(turnRadius)
 						end
+						if heuristicGrid then
+							heuristicCost = heuristicGrid:getHeuristicValue(succ, goal)
+						end
+						succ:updateH(goal, 0*analyticSolutionCost, heuristicCost)
+
 						--self:debug('     %s', tostring(succ))
 						if existingSuccNode then
+							--self:debug('   existing node %s', tostring(existingSuccNode))
 							-- there is already a node at this (discretized) position
-							if existingSuccNode:getCost() + 0.01 > succ:getCost() then
+							-- add a small number before comparing to adjust for floating point calculation differences
+							if existingSuccNode:getCost() + 0.001 >= succ:getCost() then
 								--self:debug('%.6f replacing %s with %s', succ:getCost() - existingSuccNode:getCost(),  tostring(existingSuccNode), tostring(succ))
-								-- successor cell already exist but the new one is cheaper, replace
-								-- may add 0.1 to the existing one's cost to prefer replacement
-								if self.nodes:inSameCell(succ, pred) then
-									existingSuccNode.pred = pred.pred
-								end
 								if openList:valueByPayload(existingSuccNode) then
-									-- existing node is on open list already, replace by removing
-									-- it here first
+									-- existing node is on open list already, remove it here, will replace with
 									existingSuccNode:remove(openList)
 								end
 								-- add (update) to the state space
@@ -566,7 +579,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 								-- add to open list
 								succ:insert(openList)
 							else
-								--self:debug('did not insert node %s (iteration %d)', tostring(succ), self.iterations)
+								--self:debug('insert existing node back %s (iteration %d), diff %s', tostring(succ), self.iterations, tostring(succ:getCost() - existingSuccNode:getCost()))
 							end
 						else
 							-- successor cell does not yet exist
@@ -577,7 +590,6 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 					else
 						--self:debug('Invalid node %s (iteration %d)', tostring(succ), self.iterations)
 						succ:close()
-						self.nodes:add(succ)
 					end -- valid node
 				end
 			end
@@ -635,11 +647,11 @@ AStar = CpObject(HybridAStar)
 
 function AStar:init(yieldAfter)
 	HybridAStar.init(self, yieldAfter)
-	self.deltaPos = 2
+	self.deltaPos = 1
 	self.deltaPosGoal = self.deltaPos
 	self.deltaThetaDeg = 181
-	self.deltaThetaDegGoal = self.deltaThetaDeg
-	self.analyticSolverEnabled = true
+	self.deltaThetaGoal = math.rad(self.deltaThetaDeg)
+	self.analyticSolverEnabled = false
 end
 
 function AStar:getMotionPrimitives(turnRadius, allowReverse)
@@ -656,7 +668,7 @@ function AStarOnPolygon:init(yieldAfter, configurationSpace, deltaPosGoal)
 	self.deltaPos = 0.1
 	self.deltaPosGoal = deltaPosGoal or 11
 	self.deltaThetaDeg = 181
-	self.deltaThetaDegGoal = self.deltaThetaDeg
+	self.deltaThetaGoal = math.rad(self.deltaThetaDeg)
 	self.motionPrimitives = HybridAStar.PolygonMotionPrimitives(configurationSpace)
 end
 
@@ -682,8 +694,8 @@ function HybridAStarWithAStarInTheMiddle:init(hybridRange, yieldAfter, maxIterat
 	self.ALL_HYBRID = 4 -- start and goal close enough, we only need a single phase with hybrid
 	self.hybridRange = hybridRange
 	self.yieldAfter = yieldAfter or 100
-	self.hybridAStarPathFinder = HybridAStar(self.yieldAfter, maxIterations)
-	self.aStarPathFinder = self:getAStar()
+	self.hybridAStarPathfinder = HybridAStar(self.yieldAfter, maxIterations)
+	self.aStarPathfinder = self:getAStar()
 end
 
 function HybridAStarWithAStarInTheMiddle:getAStar()
@@ -711,14 +723,14 @@ function HybridAStarWithAStarInTheMiddle:start(start, goal, turnRadius, userData
 	if self.startNode:getCost() < self.hybridRange * 3 then
 		self.phase = self.ALL_HYBRID
         self:debug('Goal is closer than %d, use one phase pathfinding only', self.hybridRange * 3)
-		self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
-		self.currentPathfinder = self.hybridAStarPathFinder
+		self.coroutine = coroutine.create(self.hybridAStarPathfinder.findPath)
+		self.currentPathfinder = self.hybridAStarPathfinder
 		return self:resume(self.startNode, self.goalNode, turnRadius, self.userData, self.allowReverse, getNodePenaltyFunc, isValidNodeFunc)
 	else
 		self.phase = self.MIDDLE
         self:debug('Finding direct path between start and goal...')
-		self.coroutine = coroutine.create(self.aStarPathFinder.findPath)
-		self.currentPathfinder = self.aStarPathFinder
+		self.coroutine = coroutine.create(self.aStarPathfinder.findPath)
+		self.currentPathfinder = self.aStarPathfinder
 		self.userData.reverseHeading = false
 		return self:resume(self.startNode, self.goalNode, turnRadius, self.userData, false, getNodePenaltyFunc, isValidNodeFunc)
 	end
@@ -752,8 +764,8 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
             self:debug('Finding path between start and middle section...')
 			self.phase = self.START_TO_MIDDLE
 			-- generate a hybrid part from the start to the middle section's start
-			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
-			self.currentPathfinder = self.hybridAStarPathFinder
+			self.coroutine = coroutine.create(self.hybridAStarPathfinder.findPath)
+			self.currentPathfinder = self.hybridAStarPathfinder
 			local goal = State3D(self.middlePath[1].x, self.middlePath[1].y, (self.middlePath[2] - self.middlePath[1]):heading())
             --print(tostring(self.middlePath))
             --print(tostring(self.startNode))
@@ -766,8 +778,8 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 					(self.middlePath[#self.middlePath] - self.middlePath[#self.middlePath - 1]):heading())
 			-- now shorten both ends of middlePath to avoid short fwd/reverse sections due to overlaps (as the patfhinding may end anywhere within
 			-- deltaPosGoal
-			HybridAStar.shortenStart(self.middlePath,self.hybridAStarPathFinder.deltaPosGoal * 2)
-			HybridAStar.shortenEnd(self.middlePath, self.hybridAStarPathFinder.deltaPosGoal * 2)
+			HybridAStar.shortenStart(self.middlePath,self.hybridAStarPathfinder.deltaPosGoal * 2)
+			HybridAStar.shortenEnd(self.middlePath, self.hybridAStarPathfinder.deltaPosGoal * 2)
 			-- append middle to start
 			self.path = path
 			for i = 1, #self.middlePath do
@@ -776,8 +788,8 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 			-- generate middle to end
 			self.phase = self.MIDDLE_TO_END
             self:debug('Finding path between middle section and goal (allow reverse %s)...', tostring(self.allowReverse))
-			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
-			self.currentPathfinder = self.hybridAStarPathFinder
+			self.coroutine = coroutine.create(self.hybridAStarPathfinder.findPath)
+			self.currentPathfinder = self.hybridAStarPathfinder
             return self:resume(start, self.goalNode, self.turnRadius, self.userData, self.allowReverse, self.getNodePenaltyFunc, self.isValidNodeFunc)
 		else
 			if path then
@@ -853,3 +865,93 @@ function HybridAStarWithPolygonInTheMiddle:getAStar()
 	return AStarOnPolygon(self.yieldAfter, self.polygon, self.deltaPosGoal)
 end
 
+HybridAStarWithHeuristic = CpObject(PathfinderInterface)
+
+---@param hybridRange number range in meters around start/goal to use hybrid A *
+---@param yieldAfter number coroutine yield after so many iterations (number of iterations in one update loop)
+function HybridAStarWithHeuristic:init(hybridRange, yieldAfter, maxIterations)
+	-- path generation phases
+	self.CREATE_HEURISTIC = 1
+	self.PATHFINDING = 2
+	self.phase = self.CREATE_HEURISTIC
+	self.hybridRange = hybridRange
+	self.yieldAfter = yieldAfter or 100
+	self.hybridAStarPathfinder = HybridAStar(self.yieldAfter, maxIterations)
+	self.aStarPathfinder = self:getAStar()
+	self.analyticSolverEnabled = false
+end
+
+function HybridAStarWithHeuristic:getAStar()
+	return AStar(self.yieldAfter)
+end
+function HybridAStarWithHeuristic:start(start, goal, turnRadius, userData, allowReverse, getNodePenaltyFunc, isValidNodeFunc)
+	self.retries = 0
+	self.startNode, self.goalNode = State3D:copy(start), State3D:copy(goal)
+	self.originalStartNode = State3D:copy(self.startNode)
+	self.turnRadius, self.userData, self.allowReverse = turnRadius, userData or {}, allowReverse
+	self.getNodePenaltyFunc = getNodePenaltyFunc
+	self.isValidNodeFunc = isValidNodeFunc
+	self.hybridRange = self.hybridRange and self.hybridRange or turnRadius * 3
+	-- how far is start/goal apart?
+	self.startNode:updateH(self.goalNode, turnRadius)
+	self.phase = self.CREATE_HEURISTIC
+	self:debug('Finding direct path between start and goal...')
+	self.coroutine = coroutine.create(self.aStarPathfinder.findPath)
+	self.currentPathfinder = self.aStarPathfinder
+	self.userData.reverseHeading = false
+	return self:resume(self.startNode, self.goalNode, turnRadius, self.userData, false, getNodePenaltyFunc, isValidNodeFunc)
+end
+
+--- The resume() of this pathfinder is more complicated as it handles essentially three separate pathfinding runs
+function HybridAStarWithHeuristic:resume(...)
+	local ok, done, path = coroutine.resume(self.coroutine, self.currentPathfinder, ...)
+	if not ok then
+		self.coroutine = nil
+		print(done)
+		return true, nil
+	end
+	if done then
+		self.coroutine = nil
+		if not path then return true, nil end
+		if self.phase == self.PATHFINDING then
+			-- start and goal near, just one phase, all hybrid, we are done
+			-- remove last waypoint as it is the approximate goal point and may not be aligned
+			local result = Polygon:new(path)
+			result:calculateData()
+			result:space(math.pi / 20, 2)
+			return true, result
+		elseif self.phase == self.CREATE_HEURISTIC then
+			if not path or #path < 2 then return true, nil end
+			self:debug('Finding path between start and middle section...')
+			self.phase = self.PATHFINDING
+			-- generate a hybrid part from the start to the middle section's start
+			self.coroutine = coroutine.create(self.hybridAStarPathfinder.findPath)
+			self.currentPathfinder = self.hybridAStarPathfinder
+			--print(tostring(self.middlePath))
+			--print(tostring(self.startNode))
+			--print(tostring(goal))
+			self.aStarPath = path
+			return self:resume(self.startNode, self.goalNode, self.turnRadius, self.userData, self.allowReverse, self.getNodePenaltyFunc, self.isValidNodeFunc, HeuristicPath(path))
+		end
+	end
+	return false
+end
+
+HeuristicPath = CpObject()
+
+function HeuristicPath:init(path)
+	self.path = path
+end
+
+function HeuristicPath:getHeuristicValue(node, goal)
+	local minDistance = math.huge
+	local closestNode
+	for _, n in ipairs(self.path) do
+		local d = n:distance(node)
+		if d < minDistance then
+			closestNode = n
+			minDistance = d
+		end
+	end
+	return minDistance + closestNode:distance(goal)
+end

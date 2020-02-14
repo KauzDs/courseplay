@@ -122,7 +122,7 @@ end
 
 function State3D:updateG(primitive, userPenalty)
     local penalty = 1
-    local reversePenalty = 4
+    local reversePenalty = 2
     if self.pred then
         -- penalize turning
         if self.pred.steer and self.steer ~= self.pred.steer then
@@ -145,10 +145,12 @@ function State3D:setNodePenalty(nodePenalty)
 end
 
 ---@param node State3D
-function State3D:updateH(goal, analyticPathLength)
+function State3D:updateH(goal, analyticPathLength, heuristicPathLength)
     -- simple Eucledian heuristics
     local h = self:distance(goal)
-    self.h = math.max(h, analyticPathLength or 0)
+    self.hAnalytic = analyticPathLength
+    self.hHeuristic = heuristicPathLength
+    self.h = math.max(h, analyticPathLength or 0, heuristicPathLength or 0)
     self.cost = self.g + self.h
 end
 
@@ -185,9 +187,17 @@ end
 
 function State3D:__tostring()
     local result
+    local steer
+    if self.steer == HybridAStar.Steer.Right then
+        steer = 'Right'
+    elseif self.steer == HybridAStar.Steer.Left then
+        steer = 'Left'
+    else
+        steer = 'Straight'
+    end
     local gear = self.gear == HybridAStar.Gear.Forward and 'Forward' or 'Backward'
-    result = string.format('x: %.2f y:%.2f t:%d(%.2f) gear:%s g:%.2f h:%.2f c:%.2f closed:%s open:%s',
-            self.x, self.y, math.deg(self.t), self.t, gear,
+    result = string.format('x: %.2f y:%.2f t:%d(%.2f) gear:%s steer:%s g:%.4f h:%.4f c:%.4f closed:%s open:%s',
+            self.x, self.y, math.deg(self.t), self.t, gear, steer,
             self.g, self.h, self.cost, tostring(self.closed), tostring(self.onOpenList))
     return result
 end

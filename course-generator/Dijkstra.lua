@@ -122,14 +122,14 @@ end
 ---@class NonholonomicRelaxed
 NonholonomicRelaxed = CpObject()
 local sqrt2 = 1.4142135623730950488016887242097
-local discount = 0.92621
+NonholonomicRelaxed.discount = 0.92621
 
 ---@param grid Grid
 function NonholonomicRelaxed:init(grid)
     self.heuristic = {}
     self.expanded = {}
     self.grid = grid
-    self.unit = grid.resolution * discount -- factor to discount the suboptimality of 8-neighbor paths
+    self.unit = grid.resolution * NonholonomicRelaxed.discount -- factor to discount the suboptimality of 8-neighbor paths
     self.minValue = math.huge
     self.maxValue = -math.huge
     self.count = 0

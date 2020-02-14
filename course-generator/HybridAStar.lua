@@ -436,7 +436,7 @@ function HybridAStar:init(yieldAfter, maxIterations)
 	self.count = 0
 	self.yields = 0
 	self.yieldAfter = yieldAfter or 200
-	self.maxIterations = maxIterations or 100000
+	self.maxIterations = maxIterations or 40000
 	self.path = {}
 	self.iterations = 0
 	-- state space resolution
@@ -527,7 +527,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 					local analyticSolution, pathType = self.analyticSolver:solve(pred, goal, turnRadius, allowReverse)
 					self:debug('Check analytical solution at iteration %d, %.1f, %.1f', self.iterations, pred.h, pred.h / self.distanceToGoal)
 					local analyticPath = analyticSolution:getWaypoints(pred, turnRadius)
-					if self:isPathValid(analyticPath) then
+					if self:isPathValid(analyticPath, userData) then
 						self:debug('Found collision free analytic path (%s) at iteration %d', pathType, self.iterations)
 						-- remove first node of returned analytic path as it is the same as pred
 						table.remove(analyticPath, 1)
@@ -607,10 +607,10 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
     return true, nil
 end
 
-function HybridAStar:isPathValid(path)
+function HybridAStar:isPathValid(path, userData)
 	if not path or #path < 2 then return false end
-	for i, p in ipairs(path) do
-		if not self.isValidNodeFunc({x = p.x, y = p.y}) then
+	for i, n in ipairs(path) do
+		if not self.isValidNodeFunc(n, userData) then
 			return false
 		end
 	end

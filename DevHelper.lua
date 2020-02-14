@@ -127,9 +127,11 @@ function DevHelper:startPathfinding()
 
     local done, path
     if self.vehicle and self.vehicle.cp.driver and self.vehicle.cp.driver.fieldworkCourse then
+        self:debug('Starting pathfinding for turn between %s and %s', tostring(self.start), tostring(self.goal))
         self.pathfinder, done, path = PathfinderUtil.findPathForTurn(self.vehicle, 0, self.goalNode, 0,
                 1.05 * self.vehicle.cp.turnDiameter / 2, false, self.vehicle.cp.driver.fieldworkCourse)
     else
+        self:debug('Starting pathfinding (allow reverse) between %s and %s', tostring(self.start), tostring(self.goal))
         self.pathfinder, done, path = PathfinderUtil.startPathfinding(self.start, self.goal, self.context, true)
     end
 
@@ -214,10 +216,10 @@ function DevHelper:showVehicleSize()
     local x, z, yRot = PathfinderUtil.getNodePositionAndDirection(AIDriverUtil.getDirectionNode(vehicle))
     local node = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
     if not g_devHelper.helperNode then
-        g_devHelper.helperNode = courseplay.createNode('pathfinderHelper', node.position.x, -node.position.y, 0)
+        g_devHelper.helperNode = courseplay.createNode('pathfinderHelper', node.x, -node.y, 0)
     end
-    local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.position.x, 0, -node.position.y);
-    setTranslation(g_devHelper.helperNode, node.position.x, y, -node.position.y)
+    local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.x, 0, -node.y);
+    setTranslation(g_devHelper.helperNode, node.x, y, -node.y)
     setRotation(g_devHelper.helperNode, 0, courseGenerator.toCpAngle(node.t), 0)
    
     if self.vehicleData then

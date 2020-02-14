@@ -561,7 +561,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 						if heuristicGrid then
 							heuristicCost = heuristicGrid:getHeuristicValue(succ, goal)
 						end
-						succ:updateH(goal, 0*analyticSolutionCost, heuristicCost)
+						succ:updateH(goal, analyticSolutionCost, heuristicCost)
 
 						--self:debug('     %s', tostring(succ))
 						if existingSuccNode then
@@ -647,7 +647,7 @@ AStar = CpObject(HybridAStar)
 
 function AStar:init(yieldAfter)
 	HybridAStar.init(self, yieldAfter)
-	self.deltaPos = 1
+	self.deltaPos = 4
 	self.deltaPosGoal = self.deltaPos
 	self.deltaThetaDeg = 181
 	self.deltaThetaGoal = math.rad(self.deltaThetaDeg)
